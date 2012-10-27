@@ -1,6 +1,6 @@
 #!/usr/bin/env ruby
 
-require 'mysql'
+require 'pg'
 require 'digest/md5'
 
 require_relative 'config'
@@ -8,11 +8,11 @@ require_relative 'classes'
 
 class Connection
 	def initialize
-		@con = Mysql::real_connect(
-			MailConfig::DB_HOST, 
-			MailConfig::DB_USER, 
-			MailConfig::DB_PASS, 
-			MailConfig::DB_DB
+		@con = 	PG::Connection.new(
+			:host => MailConfig::DB_HOST, 
+			:user => MailConfig::DB_USER, 
+			:password => MailConfig::DB_PASS, 
+			:dbname => MailConfig::DB_DB
 		)
 	end
 	
@@ -30,9 +30,9 @@ class Connection
 			"select id, password from virtual_users where email = '%s';" % 
 				@con.escape_string(email))
 		
-		id, hash = q.fetch_row
-		
-		return false unless id
+		return false if q.ntuples == 0
+		id = q[0]['id']
+		hash = q[0]['password']
 		
 		if Digest::MD5.hexdigest(password) == hash
 			return id
@@ -47,7 +47,7 @@ class Connection
 		q = @con.query("select count(*) from virtual_users where email = '%s'" %
 			@con.escape_string("#{lh}@#{domain.name}") )
 		
-		return q.fetch_row.first.to_i > 0
+		return q[0]['count'].to_i > 0
 		
 	end
 	
@@ -71,7 +71,7 @@ class Connection
 		
 		user = nil
 		
-		while row = q.fetch_hash
+		q.each do |row| 
 			
 			if user.nil?
 				user = User.new
@@ -99,8 +99,9 @@ class Connection
 			
 			q = @con.query("select * from autoresponder where email = '%s'" %
 				user.email)
-			row = q.fetch_hash
-			if row
+			
+			if q.ntuples >= 1
+				row = q[0]
 				
 				ar.email = row['email']
 				ar.descname = row['descname']
@@ -120,9 +121,8 @@ class Connection
 	def add_user(lh, domain, password, admin_domains, super_admin)
 		
 		email = @con.escape_string("#{lh}@#{domain.name}")
-		
-		@con.query("insert into virtual_users values(NULL, %d, '%s', '%s', %d)" %
-			[ domain.id, Digest::MD5.hexdigest(password), email, super_admin ? 1 : 0 ])
+		@con.query("insert into virtual_users (domain_id, password, email, super_admin) values (%d, '%s', '%s', %s)" %
+			[ domain.id, Digest::MD5.hexdigest(password), email, super_admin ? 'true' : 'false' ])
 		
 		if admin_domains && admin_domains.length > 0
 			id = insert_id
@@ -193,7 +193,7 @@ to domains the other can't see -- it'll delete ones that "I" can't check.
 		
 		ret = []
 		
-		while row = q.fetch_hash
+		q.each do |row|
 			
 			user = User.new
 			user.id = row['id']
@@ -213,7 +213,7 @@ to domains the other can't see -- it'll delete ones that "I" can't check.
 		q = @con.query("select * from virtual_aliases
 			where domain_id = %d and source != destination order by source asc" % domain.id)
 		ret = []
-		while row = q.fetch_hash
+		q.each do |row|
 			
 			a = Alias.new
 			a.id = row['id']
@@ -254,7 +254,7 @@ to domains the other can't see -- it'll delete ones that "I" can't check.
 		
 		ret = nil
 		
-		if row = q.fetch_hash
+		if row = q[0]
 			
 			ret = Alias.new
 			ret.id = row['id']
@@ -275,7 +275,7 @@ to domains the other can't see -- it'll delete ones that "I" can't check.
 		q = @con.query("select id from virtual_aliases where %s = '%s'" % 
 			[ f, @con.escape_string(name) ])
 		
-		return row[0] if row = q.fetch_row
+		return row[0] if row = q[0]
 		
 		return nil
 		
@@ -293,7 +293,7 @@ to domains the other can't see -- it'll delete ones that "I" can't check.
 	end
 
 	def insert_id
-		@con.query("select last_insert_id()").fetch_row.first
+		@con.query("select last_insert_id()")[0]
 	end
 	
 	def test_goldfish
@@ -333,7 +333,7 @@ to domains the other can't see -- it'll delete ones that "I" can't check.
 		q = @con.query("select * from `autoresponder` where `enabled` 
 			and `from` <= NOW() and `to` > NOW()")
 		
-		while row = q.fetch_hash
+		q.each do |row|
 			yield row
 		end
 		
@@ -351,7 +351,7 @@ to domains the other can't see -- it'll delete ones that "I" can't check.
 			and autoresponder_recipients.send_date >= autoresponder.`from`" %
 				[ @con.escape_string(user), @con.escape_string(recipient) ])
 		
-		if q.fetch_row
+		if q.ntuples > 0
 			return true
 		end
 		

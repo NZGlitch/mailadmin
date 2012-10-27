@@ -1,9 +1,10 @@
 #!/usr/bin/env ruby
 
 module MailConfig
+	DB_TYPE = "pg"		#pg or mysql
 	DB_HOST = "localhost"
-	DB_USER = "root"
-	DB_PASS = ""
+	DB_USER = "mailuser"
+	DB_PASS = "mailuser"
 	DB_DB = "mailserver"
 	
 # If you're going to use the built-in autoresponder, this should return a

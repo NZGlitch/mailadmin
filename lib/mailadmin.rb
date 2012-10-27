@@ -12,6 +12,7 @@ set :views, File.join(File.dirname(__FILE__), '..', 'views')
 enable :sessions
 
 before do
+
 	@con = Connection.new
 	@flash = session[:flash]
 	session[:flash] = nil
